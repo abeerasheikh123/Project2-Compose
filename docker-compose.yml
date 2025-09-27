@@ -1,38 +1,37 @@
-version: "3.8"
+version: '3.8'
 
 services:
   dind:
-    # Docker-in-Docker service: stores container layers in a named volume (docker-cache)
+    # Docker-in-Docker service: allows Jenkins to build and run Docker images safely
     image: docker:24-dind
     container_name: project2_dind
-    privileged: true
+    privileged: true                   # required for DinD
     environment:
-      # disable TLS for lab convenience (insecure) -- DO NOT do this in production
-      - DOCKER_TLS_CERTDIR=
+      - DOCKER_TLS_CERTDIR=             # disable TLS for lab convenience (insecure)
     volumes:
-      - docker-cache:/var/lib/docker
+      - docker-cache:/var/lib/docker    # persist Docker layers across container restarts
     networks:
       - cicd-net
     expose:
-      - "2375" # available to other compose services on the network
+      - "2375"                          # Docker daemon accessible to other services on the network
 
   jenkins:
-    # Custom Jenkins image (we'll build it below) that contains docker client
-    build: ./jenkins
+    # Jenkins service that uses DinD to run Docker commands
+    build: ./jenkins                     # path to custom Jenkins Dockerfile with Docker CLI installed
     image: project2_jenkins:latest
     container_name: project2_jenkins
     restart: unless-stopped
     ports:
-      - "8080:8080"   # Jenkins UI
-      - "50000:50000" # Jenkins agent port
+      - "8080:8080"                      # Jenkins UI
+      - "50000:50000"                    # Jenkins agent port
     depends_on:
       - dind
     environment:
-      - DOCKER_HOST=tcp://dind:2375
-      - DOCKER_TLS_VERIFY=0
+      - DOCKER_HOST=tcp://dind:2375     # connect Jenkins Docker CLI to DinD service
+      - DOCKER_TLS_VERIFY=0              # disable TLS verification (insecure, for lab)
     volumes:
-      - jenkins_home:/var/jenkins_home
-      - ./jenkins/init.groovy.d:/var/jenkins_home/init.groovy.d:ro
+      - jenkins_home:/var/jenkins_home              # persist Jenkins data
+      - ./jenkins/init.groovy.d:/var/jenkins_home/init.groovy.d:ro # init scripts
     networks:
       - cicd-net
 
