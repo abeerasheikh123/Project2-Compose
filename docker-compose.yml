@@ -1,43 +1,68 @@
-version: '3.8'
-
+# Project2-Compose/docker-compose.yml
+# Docker Compose (v2) - Jenkins + Docker-in-Docker (DinD)
+# - DinD provides a remote Docker daemon Jenkins can use (tcp://docker:2376)
+# - Named volumes persist Jenkins home and Docker layer cache
+# - DNS entries added to avoid container DNS resolution problems (e.g., github.com)
+#
 services:
   dind:
-    # Docker-in-Docker service: allows Jenkins to build and run Docker images safely
     image: docker:24-dind
-    container_name: project2_dind
-    privileged: true                   # required for DinD
+    container_name: dind
+    privileged: true                          # required for DinD (document as risk in report)
     environment:
-      - DOCKER_TLS_CERTDIR=             # disable TLS for lab convenience (insecure)
+      - DOCKER_TLS_CERTDIR=/certs
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     volumes:
-      - docker-cache:/var/lib/docker    # persist Docker layers across container restarts
+      - docker-certs-ca:/certs/ca
+      - docker-certs-client:/certs/client
+      - docker-layer-cache:/var/lib/docker   # Docker layer cache (speeds image builds)
+      - jenkins-data:/var/jenkins_home       # optional: persist jenkins files if required
     networks:
-      - cicd-net
-    expose:
-      - "2375"                          # Docker daemon accessible to other services on the network
+      jenkins_net:
+        aliases:
+          - docker                          # so Jenkins can talk to tcp://docker:2376
+    healthcheck:
+      test: ["CMD-SHELL", "docker info >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   jenkins:
-    # Jenkins service that uses DinD to run Docker commands
-    build: ./jenkins                     # path to custom Jenkins Dockerfile with Docker CLI installed
-    image: project2_jenkins:latest
-    container_name: project2_jenkins
+    build: ./jenkins
+    container_name: jenkins
     restart: unless-stopped
-    ports:
-      - "8080:8080"                      # Jenkins UI
-      - "50000:50000"                    # Jenkins agent port
+    user: root
     depends_on:
       - dind
     environment:
-      - DOCKER_HOST=tcp://dind:2375     # connect Jenkins Docker CLI to DinD service
-      - DOCKER_TLS_VERIFY=0              # disable TLS verification (insecure, for lab)
+      - DOCKER_HOST=tcp://docker:2376        # points Jenkins to DinD
+      - DOCKER_CERT_PATH=/certs/client
+      - DOCKER_TLS_VERIFY=1
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    ports:
+      - "8080:8080"     # Jenkins UI
+      - "50000:50000"   # Jenkins agent port
     volumes:
-      - jenkins_home:/var/jenkins_home              # persist Jenkins data
-      - ./jenkins/init.groovy.d:/var/jenkins_home/init.groovy.d:ro # init scripts
+      - jenkins-data:/var/jenkins_home
+      - docker-certs-client:/certs/client:ro
     networks:
-      - cicd-net
+      - jenkins_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/login || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 6
 
 volumes:
-  jenkins_home:
-  docker-cache:
+  jenkins-data:
+  docker-certs-ca:
+  docker-certs-client:
+  docker-layer-cache:
 
 networks:
-  cicd-net:
+  jenkins_net:
+    driver: bridge
