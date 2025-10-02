@@ -1,14 +1,8 @@
-# Project2-Compose/docker-compose.yml
-# Docker Compose (v2) - Jenkins + Docker-in-Docker (DinD)
-# - DinD provides a remote Docker daemon Jenkins can use (tcp://docker:2376)
-# - Named volumes persist Jenkins home and Docker layer cache
-# - DNS entries added to avoid container DNS resolution problems (e.g., github.com)
-#
 services:
   dind:
     image: docker:24-dind
     container_name: dind
-    privileged: true                          # required for DinD (document as risk in report)
+    privileged: true
     environment:
       - DOCKER_TLS_CERTDIR=/certs
     dns:
